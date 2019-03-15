@@ -20,6 +20,7 @@ import org.axonframework.commandhandling.CommandHandler;
 import org.axonframework.commandhandling.TargetAggregateIdentifier;
 import org.axonframework.commandhandling.model.AggregateIdentifier;
 import org.axonframework.commandhandling.model.AggregateMember;
+import org.axonframework.commandhandling.model.ConcurrencyException;
 import org.axonframework.commandhandling.model.EntityId;
 import org.axonframework.config.Configuration;
 import org.axonframework.config.DefaultConfigurer;
@@ -191,6 +192,17 @@ public abstract class AbstractDeadlineManagerTestSuite {
         configuration.deadlineManager().schedule(Duration.ofMinutes(1), "testing", null, mockScope, "123");
     }
 
+    @Test
+    public void testDeadlineWithTransientException() {
+        Instant expectedDeadlinePayload = Instant.now().plusMillis(5 * DEADLINE_TIMEOUT);
+
+        configuration.commandGateway().sendAndWait(new CreateMyAggregateCommand(IDENTIFIER, CANCEL_BEFORE_DEADLINE));
+        configuration.commandGateway().sendAndWait(new ScheduleTransientExceptionDeadline(IDENTIFIER, expectedDeadlinePayload));
+
+        assertPublishedEvents(new MyAggregateCreatedEvent(IDENTIFIER),
+                new TransientExceptionDeadlineOccurredEvent(expectedDeadlinePayload));
+    }
+
     private void assertPublishedEvents(Object... expectedEvents) {
         assertWithin(DEADLINE_WAIT_THRESHOLD,
                      TimeUnit.MILLISECONDS,
@@ -251,6 +263,40 @@ public abstract class AbstractDeadlineManagerTestSuite {
                 return false;
             }
             final ScheduleSpecificDeadline other = (ScheduleSpecificDeadline) obj;
+            return Objects.equals(this.id, other.id)
+                    && Objects.equals(this.payload, other.payload);
+        }
+    }
+
+    private static class ScheduleTransientExceptionDeadline {
+
+        @TargetAggregateIdentifier
+        private final String id;
+        private final Instant payload;
+
+        private ScheduleTransientExceptionDeadline(String id, Instant payload) {
+            this.id = id;
+            this.payload = payload;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, payload);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (obj == null || getClass() != obj.getClass()) {
+                return false;
+            }
+            final ScheduleTransientExceptionDeadline other = (ScheduleTransientExceptionDeadline) obj;
             return Objects.equals(this.id, other.id)
                     && Objects.equals(this.payload, other.payload);
         }
@@ -472,6 +518,32 @@ public abstract class AbstractDeadlineManagerTestSuite {
         }
     }
 
+    private static class TransientExceptionDeadlineOccurredEvent {
+
+        private final Object payload;
+
+        private TransientExceptionDeadlineOccurredEvent(Object payload) {
+            this.payload = payload;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(payload);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (obj == null || getClass() != obj.getClass()) {
+                return false;
+            }
+            final TransientExceptionDeadlineOccurredEvent other = (TransientExceptionDeadlineOccurredEvent) obj;
+            return Objects.equals(this.payload, other.payload);
+        }
+    }
+
     @SuppressWarnings("unused")
     public static class MySaga {
 
@@ -555,6 +627,12 @@ public abstract class AbstractDeadlineManagerTestSuite {
             }
         }
 
+        @CommandHandler
+        public void on(ScheduleTransientExceptionDeadline message, DeadlineManager deadlineManager) {
+            Instant deadlinePayload = message.payload;
+            deadlineManager.schedule(Duration.ofMillis(DEADLINE_TIMEOUT), "transientExceptionDeadline", deadlinePayload);
+        }
+
         @EventSourcingHandler
         public void on(MyAggregateCreatedEvent event) {
             this.id = event.id;
@@ -575,6 +653,15 @@ public abstract class AbstractDeadlineManagerTestSuite {
         @DeadlineHandler(deadlineName = "payloadlessDeadline")
         public void on() {
             apply(new SpecificDeadlineOccurredEvent(null));
+        }
+
+        @DeadlineHandler(deadlineName = "transientExceptionDeadline")
+        public void onTransientExceptionDeadline(Instant deadlinePayload) {
+            if (deadlinePayload.isAfter(Instant.now())) {
+                throw new ConcurrencyException("");
+            } else {
+                apply(new TransientExceptionDeadlineOccurredEvent(deadlinePayload));
+            }
         }
 
         @CommandHandler
