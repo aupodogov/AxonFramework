@@ -123,7 +123,7 @@ public class Jackson3Serializer implements Serializer {
         JsonMapper.Builder jmb = JsonMapper.builder();
 
         jmb.addModule(new SimpleModule("Axon-Jackson3 Module").addDeserializer(MetaData.class, new MetaDataDeserializer()));
-
+        jmb.findAndAddModules();
         if (builder.lenientDeserialization) {
             jmb.enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY);
             jmb.enable(DeserializationFeature.UNWRAP_SINGLE_VALUE_ARRAYS);
