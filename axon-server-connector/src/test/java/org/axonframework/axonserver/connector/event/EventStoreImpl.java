@@ -17,6 +17,8 @@
 package org.axonframework.axonserver.connector.event;
 
 import io.axoniq.axonserver.grpc.event.Confirmation;
+import io.axoniq.axonserver.grpc.event.ConfirmationWithConsistencyMarker;
+import io.axoniq.axonserver.grpc.event.ConsistencyMarker;
 import io.axoniq.axonserver.grpc.event.Event;
 import io.axoniq.axonserver.grpc.event.EventStoreGrpc;
 import io.axoniq.axonserver.grpc.event.EventWithToken;
@@ -86,7 +88,7 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
     }
 
     @Override
-    public StreamObserver<Event> appendEvent(StreamObserver<Confirmation> responseObserver) {
+    public StreamObserver<Event> appendEvent(StreamObserver<ConfirmationWithConsistencyMarker> responseObserver) {
         return new StreamObserver<Event>() {
 
             private final List<Event> eventsInTx = new LinkedList<>();
@@ -104,7 +106,15 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
             @Override
             public void onCompleted() {
                 events.addAll(eventsInTx);
-                responseObserver.onNext(Confirmation.newBuilder().setSuccess(true).build());
+                long lastSeqnr = events.isEmpty() ? -1 : (int)
+                    events.get(events.size() - 1).getAggregateSequenceNumber();
+                responseObserver.onNext(ConfirmationWithConsistencyMarker.newBuilder()
+                                                                         .setSuccess(true)
+                                                                         .setConsistencyMarker(ConsistencyMarker.newBuilder()
+                                                                                                                .setToken(
+                                                                                                                        lastSeqnr+1)
+                                                                                                                .build())
+                                                                         .build());
                 responseObserver.onCompleted();
             }
         };
