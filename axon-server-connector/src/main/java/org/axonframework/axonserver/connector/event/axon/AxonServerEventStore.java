@@ -514,12 +514,12 @@ public class AxonServerEventStore extends AbstractEventStore {
                 if (response.hasConsistencyMarker()) {
 
                     for (String id : aggregateIds) {
-                        CurrentUnitOfWork.get().root()
+                        CurrentUnitOfWork.ifStarted(uow -> uow.root()
                                          .<Supplier<Optional<Long>>>getOrComputeResource(
                                                  CachingEventSourcingRepository.COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX
                                                          + id,
                                                  k -> () -> Optional.of(response.getConsistencyMarker().getToken() - 1)
-                                         );
+                                         ));
                     }
                 }
             } catch (ExecutionException e) {
