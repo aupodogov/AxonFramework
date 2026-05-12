@@ -132,6 +132,7 @@ public class CachingEventSourcingRepository<T> extends EventSourcingRepository<T
             cache.remove(key);
             return;
         }
+        aggregate.initSequence(resolved.get());
         cache.put(key, new AggregateCacheEntry<>(aggregate, resolved.get()));
     }
 
